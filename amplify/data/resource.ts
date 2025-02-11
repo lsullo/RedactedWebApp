@@ -56,6 +56,7 @@ const schema = a.schema({
             lockedbio: a.string(),
             groups: a.hasMany('Group', 'UserIndexId'), 
             stripeCustomerId: a.string(),
+            expoPushToken: a.string(),
         })
         .secondaryIndexes((index) => [
             index('userId'), 

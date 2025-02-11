@@ -1,3 +1,4 @@
+// app/(whatever)/ProfilePage.tsx (React code)
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Schema } from '../../amplify/data/resource';
@@ -7,16 +8,22 @@ import { StorageImage } from '@aws-amplify/ui-react-storage';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { FaPen, FaArrowLeft } from 'react-icons/fa';
 
+// Initialize Amplify client
 const client = generateClient<Schema>();
 
 const ProfilePage = () => {
   const { userIndexId } = useParams<{ userIndexId: string }>();
   const navigate = useNavigate();
+
   const [profileData, setProfileData] = useState<Schema['UserIndex']['type'] | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<'Owner' | 'Lawyer' | 'User' | 'VIP' | null>(null);
   const [isSelf, setIsSelf] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // File upload
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Editing states
   const [isEditingNickname, setIsEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState('');
   const [isEditingBio, setIsEditingBio] = useState(false);
@@ -26,6 +33,9 @@ const ProfilePage = () => {
   const [isEditingLockedBio, setIsEditingLockedBio] = useState(false);
   const [newLockedBio, setNewLockedBio] = useState('');
 
+  // ------------------------------------
+  // 1. Fetch the profile by userId (sub)
+  // ------------------------------------
   useEffect(() => {
     const fetchProfileData = async () => {
       if (!userIndexId) {
@@ -34,26 +44,33 @@ const ProfilePage = () => {
       }
 
       try {
-        const userIndexResponse = await client.models.UserIndex.get({ id: userIndexId });
-        if (userIndexResponse.data) {
-          setProfileData(userIndexResponse.data);
-
-          const session = await fetchAuthSession();
-          const currentUserId = session.tokens?.idToken?.payload.sub;
-
-          if (currentUserId) {
-            const currentUserIndexResponse = await client.models.UserIndex.list({
-              filter: { userId: { eq: currentUserId } },
-            });
-
-            if (currentUserIndexResponse.data.length > 0) {
-              const currentUserData = currentUserIndexResponse.data[0];
-              setCurrentUserRole(currentUserData.RedPill || null);
-              setIsSelf(currentUserId === userIndexResponse.data.userId);
-            }
-          }
-        } else {
+        // Instead of .get({ id: userIndexId }), we filter by userId:
+        const userIndexResponse = await client.models.UserIndex.list({
+          filter: { userId: { eq: userIndexId } },
+        });
+        const [record] = userIndexResponse.data;
+        if (!record) {
           setErrorMessage('Profile not found');
+          return;
+        }
+        setProfileData(record);
+
+        // Check if the current user is the same or has "Owner" role
+        const session = await fetchAuthSession();
+        const currentUserId = session.tokens?.idToken?.payload.sub;
+
+        if (currentUserId) {
+          const currentUserIndexResponse = await client.models.UserIndex.list({
+            filter: { userId: { eq: currentUserId } },
+          });
+
+          if (currentUserIndexResponse.data.length > 0) {
+            const currentUserData = currentUserIndexResponse.data[0];
+            setCurrentUserRole(currentUserData.RedPill || null);
+
+            // If the current user is the same user
+            setIsSelf(currentUserId === record.userId);
+          }
         }
       } catch (error) {
         console.error('Error fetching profile data:', error);
@@ -64,22 +81,32 @@ const ProfilePage = () => {
     fetchProfileData();
   }, [userIndexId]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ------------------------------------
+  // 2. Handle photo upload
+  // ------------------------------------
+  const openFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      handleUpload(selectedFile);
+      try {
+        await handleUpload(e.target.files[0]);
+      } catch (err) {
+        console.error('Error during file change:', err);
+      }
     }
   };
 
   const handleUpload = async (file: File) => {
     if (!profileData) return;
-
     try {
       const uploadedItem = await uploadData({
         data: file,
         path: `chat-pics/${file.name}`,
       }).result;
 
+      // Update the record (use the record's actual ID, which is auto-generated)
       await client.models.UserIndex.update({
         id: profileData.id,
         userId: profileData.userId,
@@ -87,32 +114,31 @@ const ProfilePage = () => {
         photoId: uploadedItem.path,
       });
 
+      // Re-fetch the updated record
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
-      setProfileData(updatedProfileResponse.data);
+      if (updatedProfileResponse.data) {
+        setProfileData(updatedProfileResponse.data);
+      }
     } catch (error) {
       console.error('Error uploading image:', error);
       setErrorMessage("Can't use that image");
-      setTimeout(() => {
-        setErrorMessage('');
-      }, 3777);
+      setTimeout(() => setErrorMessage(''), 3777);
     }
   };
 
-  const openFileInput = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
+  // ------------------------------------
+  // 3. Edits (nickname, bio, role, lockedBio)
+  // ------------------------------------
   const handleNicknameEdit = () => {
+    if (!profileData) return;
     setIsEditingNickname(true);
-    setNewNickname(profileData?.userNickname || '');
+    setNewNickname(profileData.userNickname || '');
   };
 
   const handleNicknameSave = async () => {
     if (!profileData) return;
-
     try {
+      // Update main userIndex
       await client.models.UserIndex.update({
         id: profileData.id,
         userId: profileData.userId,
@@ -120,7 +146,7 @@ const ProfilePage = () => {
         userNickname: newNickname,
       });
 
-          
+      // Update all GroupUser references for display name
       const groupUserResponse = await client.models.GroupUser.list({
         filter: { userId: { eq: profileData.userId } },
       });
@@ -132,28 +158,29 @@ const ProfilePage = () => {
         });
       }
 
+      // Re-fetch updated profile
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
-      setProfileData(updatedProfileResponse.data);
-
+      if (updatedProfileResponse.data) {
+        setProfileData(updatedProfileResponse.data);
+      }
       setIsEditingNickname(false);
-      window.location.reload();
+      // If you want to force a page reload:
+      // window.location.reload();
     } catch (error) {
       console.error('Error updating nickname:', error);
       setErrorMessage('Error updating nickname');
-      setTimeout(() => {
-        setErrorMessage('');
-      }, 3777);
+      setTimeout(() => setErrorMessage(''), 3777);
     }
   };
 
   const handleBioEdit = () => {
+    if (!profileData) return;
     setIsEditingBio(true);
-    setNewBio(profileData?.bio || '');
+    setNewBio(profileData.bio || '');
   };
 
   const handleBioSave = async () => {
     if (!profileData) return;
-
     try {
       await client.models.UserIndex.update({
         id: profileData.id,
@@ -163,34 +190,30 @@ const ProfilePage = () => {
       });
 
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
-      setProfileData(updatedProfileResponse.data);
-
+      if (updatedProfileResponse.data) {
+        setProfileData(updatedProfileResponse.data);
+      }
       setIsEditingBio(false);
     } catch (error) {
       console.error('Error updating bio:', error);
       setErrorMessage('Error updating bio');
-      setTimeout(() => {
-        setErrorMessage('');
-      }, 3777);
+      setTimeout(() => setErrorMessage(''), 3777);
     }
   };
 
   const handleRoleEdit = () => {
+    if (!profileData) return;
     setIsEditingRole(true);
-    setNewRole(profileData?.RedPill || '');
+    setNewRole(profileData.RedPill || '');
   };
 
   const handleRoleSave = async () => {
     if (!profileData) return;
-
     if (!newRole) {
       setErrorMessage('Please select a valid role.');
-      setTimeout(() => {
-        setErrorMessage('');
-      }, 3777);
+      setTimeout(() => setErrorMessage(''), 3777);
       return;
     }
-
     try {
       await client.models.UserIndex.update({
         id: profileData.id,
@@ -200,26 +223,25 @@ const ProfilePage = () => {
       });
 
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
-      setProfileData(updatedProfileResponse.data);
-
+      if (updatedProfileResponse.data) {
+        setProfileData(updatedProfileResponse.data);
+      }
       setIsEditingRole(false);
     } catch (error) {
       console.error('Error updating role:', error);
       setErrorMessage('Error updating role');
-      setTimeout(() => {
-        setErrorMessage('');
-      }, 3777);
+      setTimeout(() => setErrorMessage(''), 3777);
     }
   };
 
   const handleLockedBioEdit = () => {
+    if (!profileData) return;
     setIsEditingLockedBio(true);
-    setNewLockedBio(profileData?.lockedbio || '');
+    setNewLockedBio(profileData.lockedbio || '');
   };
 
   const handleLockedBioSave = async () => {
     if (!profileData) return;
-
     try {
       await client.models.UserIndex.update({
         id: profileData.id,
@@ -229,22 +251,27 @@ const ProfilePage = () => {
       });
 
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
-      setProfileData(updatedProfileResponse.data);
-
+      if (updatedProfileResponse.data) {
+        setProfileData(updatedProfileResponse.data);
+      }
       setIsEditingLockedBio(false);
     } catch (error) {
       console.error('Error updating locked bio:', error);
       setErrorMessage('Error updating locked bio');
-      setTimeout(() => {
-        setErrorMessage('');
-      }, 3777);
+      setTimeout(() => setErrorMessage(''), 3777);
     }
   };
 
+  // ------------------------------------
+  // 4. Navigation
+  // ------------------------------------
   const handleBack = () => {
     navigate(-1);
   };
 
+  // ------------------------------------
+  // 5. Render
+  // ------------------------------------
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-white relative">
       {/* Back Arrow Icon */}
@@ -264,6 +291,7 @@ const ProfilePage = () => {
 
       {profileData ? (
         <div className="w-full max-w-md p-6 space-y-4">
+          {/* Profile Picture + Edit */}
           <div className="relative flex justify-center">
             <div className="relative avatar w-16 h-16 mask mask-squircle mb-4 mx-auto">
               {profileData.photoId ? (
@@ -276,25 +304,28 @@ const ProfilePage = () => {
                 <img src="/monkey.png" alt="Profile" className="w-full h-full object-cover" />
               )}
             </div>
+
             {(isSelf || currentUserRole === 'Owner') && (
-              <button
-                className="absolute bottom-1 right-32 p-2 bg-gray-200 rounded-full hover:bg-gray-300"
-                onClick={openFileInput}
-                aria-label="Edit Profile Picture"
-              >
-                <FaPen />
-              </button>
-            )}
-            {(isSelf || currentUserRole === 'Owner') && (
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                style={{ display: 'none' }}
-                accept="image/*"
-              />
+              <>
+                <button
+                  className="absolute bottom-1 right-32 p-2 bg-gray-200 rounded-full hover:bg-gray-300"
+                  onClick={openFileInput}
+                  aria-label="Edit Profile Picture"
+                >
+                  <FaPen />
+                </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                  accept="image/*"
+                />
+              </>
             )}
           </div>
+
+          {/* Nickname */}
           <div className="text-center">
             <div className="flex items-center justify-center">
               {isEditingNickname ? (
@@ -315,7 +346,7 @@ const ProfilePage = () => {
                     <button
                       onClick={() => {
                         setIsEditingNickname(false);
-                        setNewNickname(profileData?.userNickname || '');
+                        setNewNickname(profileData.userNickname || '');
                       }}
                       className="btn btn-secondary btn-sm ml-2"
                     >
@@ -340,6 +371,8 @@ const ProfilePage = () => {
             </div>
             <p className="text-gray-600">{profileData.email}</p>
           </div>
+
+          {/* Bio */}
           <div className="mt-4">
             <div className="flex items-center justify-center">
               {isEditingBio ? (
@@ -360,7 +393,7 @@ const ProfilePage = () => {
                     <button
                       onClick={() => {
                         setIsEditingBio(false);
-                        setNewBio(profileData?.bio || '');
+                        setNewBio(profileData.bio || '');
                       }}
                       className="btn btn-secondary btn-sm ml-2"
                     >
@@ -388,7 +421,8 @@ const ProfilePage = () => {
               )}
             </div>
           </div>
-          {/* Locked Bio Section */}
+
+          {/* Locked Bio */}
           <div className="mt-4">
             <div className="flex items-center justify-center">
               {isEditingLockedBio ? (
@@ -409,7 +443,7 @@ const ProfilePage = () => {
                     <button
                       onClick={() => {
                         setIsEditingLockedBio(false);
-                        setNewLockedBio(profileData?.lockedbio || '');
+                        setNewLockedBio(profileData.lockedbio || '');
                       }}
                       className="btn btn-secondary btn-sm ml-2"
                     >
@@ -437,7 +471,8 @@ const ProfilePage = () => {
               )}
             </div>
           </div>
-          {/* Role Section */}
+
+          {/* Role */}
           <div className="mt-4">
             <div className="flex items-center justify-center">
               <p className="text-gray-600">Role: {profileData.RedPill}</p>
