@@ -6,7 +6,7 @@ import { uploadData } from 'aws-amplify/storage';
 import { StorageImage } from '@aws-amplify/ui-react-storage';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { FaPen, FaArrowLeft } from 'react-icons/fa';
-//
+
 
 const client = generateClient<Schema>();
 
