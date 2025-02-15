@@ -145,7 +145,7 @@ const ProfilePage = () => {
         setProfileData(updatedProfileResponse.data);
       }
       setIsEditingNickname(false);
-     
+     //
     } catch (error) {
       console.error('Error updating nickname:', error);
       setErrorMessage('Error updating nickname');
