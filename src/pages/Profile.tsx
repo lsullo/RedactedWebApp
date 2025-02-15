@@ -1,4 +1,3 @@
-// app/(whatever)/ProfilePage.tsx (React code)
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Schema } from '../../amplify/data/resource';
@@ -8,7 +7,7 @@ import { StorageImage } from '@aws-amplify/ui-react-storage';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { FaPen, FaArrowLeft } from 'react-icons/fa';
 
-// Initialize Amplify client
+
 const client = generateClient<Schema>();
 
 const ProfilePage = () => {
@@ -19,11 +18,7 @@ const ProfilePage = () => {
   const [currentUserRole, setCurrentUserRole] = useState<'Owner' | 'Lawyer' | 'User' | 'VIP' | null>(null);
   const [isSelf, setIsSelf] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-
-  // File upload
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Editing states
   const [isEditingNickname, setIsEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState('');
   const [isEditingBio, setIsEditingBio] = useState(false);
@@ -33,9 +28,7 @@ const ProfilePage = () => {
   const [isEditingLockedBio, setIsEditingLockedBio] = useState(false);
   const [newLockedBio, setNewLockedBio] = useState('');
 
-  // ------------------------------------
-  // 1. Fetch the profile by userId (sub)
-  // ------------------------------------
+ 
   useEffect(() => {
     const fetchProfileData = async () => {
       if (!userIndexId) {
@@ -44,7 +37,7 @@ const ProfilePage = () => {
       }
 
       try {
-        // Instead of .get({ id: userIndexId }), we filter by userId:
+       
         const userIndexResponse = await client.models.UserIndex.list({
           filter: { userId: { eq: userIndexId } },
         });
@@ -55,7 +48,6 @@ const ProfilePage = () => {
         }
         setProfileData(record);
 
-        // Check if the current user is the same or has "Owner" role
         const session = await fetchAuthSession();
         const currentUserId = session.tokens?.idToken?.payload.sub;
 
@@ -68,7 +60,6 @@ const ProfilePage = () => {
             const currentUserData = currentUserIndexResponse.data[0];
             setCurrentUserRole(currentUserData.RedPill || null);
 
-            // If the current user is the same user
             setIsSelf(currentUserId === record.userId);
           }
         }
@@ -81,9 +72,6 @@ const ProfilePage = () => {
     fetchProfileData();
   }, [userIndexId]);
 
-  // ------------------------------------
-  // 2. Handle photo upload
-  // ------------------------------------
   const openFileInput = () => {
     fileInputRef.current?.click();
   };
@@ -106,7 +94,6 @@ const ProfilePage = () => {
         path: `chat-pics/${file.name}`,
       }).result;
 
-      // Update the record (use the record's actual ID, which is auto-generated)
       await client.models.UserIndex.update({
         id: profileData.id,
         userId: profileData.userId,
@@ -114,7 +101,6 @@ const ProfilePage = () => {
         photoId: uploadedItem.path,
       });
 
-      // Re-fetch the updated record
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
       if (updatedProfileResponse.data) {
         setProfileData(updatedProfileResponse.data);
@@ -126,9 +112,6 @@ const ProfilePage = () => {
     }
   };
 
-  // ------------------------------------
-  // 3. Edits (nickname, bio, role, lockedBio)
-  // ------------------------------------
   const handleNicknameEdit = () => {
     if (!profileData) return;
     setIsEditingNickname(true);
@@ -138,7 +121,7 @@ const ProfilePage = () => {
   const handleNicknameSave = async () => {
     if (!profileData) return;
     try {
-      // Update main userIndex
+   
       await client.models.UserIndex.update({
         id: profileData.id,
         userId: profileData.userId,
@@ -146,7 +129,6 @@ const ProfilePage = () => {
         userNickname: newNickname,
       });
 
-      // Update all GroupUser references for display name
       const groupUserResponse = await client.models.GroupUser.list({
         filter: { userId: { eq: profileData.userId } },
       });
@@ -158,14 +140,12 @@ const ProfilePage = () => {
         });
       }
 
-      // Re-fetch updated profile
       const updatedProfileResponse = await client.models.UserIndex.get({ id: profileData.id });
       if (updatedProfileResponse.data) {
         setProfileData(updatedProfileResponse.data);
       }
       setIsEditingNickname(false);
-      // If you want to force a page reload:
-      // window.location.reload();
+     
     } catch (error) {
       console.error('Error updating nickname:', error);
       setErrorMessage('Error updating nickname');
@@ -262,16 +242,10 @@ const ProfilePage = () => {
     }
   };
 
-  // ------------------------------------
-  // 4. Navigation
-  // ------------------------------------
   const handleBack = () => {
     navigate(-1);
   };
 
-  // ------------------------------------
-  // 5. Render
-  // ------------------------------------
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-white relative">
       {/* Back Arrow Icon */}
